@@ -1,0 +1,14 @@
+{
+  "name": "moviestream",
+  "version": "1.0.0",
+  "description": "video streaming webApp",
+  "main": "index.js",
+  "scripts": {
+    "dev": "nodemon src/index.js"
+  },
+  "author": "shivam sisodia",
+  "license": "ISC",
+  "dependencies": {
+    "nodemon": "^3.0.2"
+  }
+}
