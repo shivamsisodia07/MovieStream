@@ -4,6 +4,7 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { User } from "../models/user.model.js";
 import { uploadOnCloudinary } from "../utils/cloudnary.js";
 import { verifyJwt } from "../middlewares/auth.js";
+import { application } from "express";
 
 const generateAccessAndRefreshToken = async (user_id) => {
   try {
@@ -19,6 +20,7 @@ const generateAccessAndRefreshToken = async (user_id) => {
     throw new ApiError("Something went wrong while generating tokens");
   }
 };
+
 const RegisterUser = asyncHandler(async (req, res) => {
   // res.status(200).json({
   //     message:"Ok"
@@ -151,6 +153,7 @@ const LoginUser = asyncHandler(async (req, res) => {
       )
     );
 });
+
 const LogOutUser = asyncHandler(async (req, res) => {
   await User.findByIdAndUpdate(
     req.user._id,
@@ -252,7 +255,7 @@ const ChangePassword = asyncHandler(async (req, res) => {
 const getCurrentUser = asyncHandler(async (req, res) => {
   return res
     .status(200)
-    .json(200, req.user, "current user fetched successfully");
+    .json(new ApiResponse(200, req.user, "current user fetched successfully"));
 });
 
 const updateDetails = asyncHandler(async (req, res) => {
@@ -262,7 +265,7 @@ const updateDetails = asyncHandler(async (req, res) => {
     throw new ApiError(400, "all field is required!!");
   }
 
-  const user = User.findByIdAndUpdate(
+  const user = await User.findByIdAndUpdate(
     req.user?._id,
     {
       $set: {
@@ -280,63 +283,136 @@ const updateDetails = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, user, "Account Details updated successfully"));
 });
 
+const updateUserAvatar = asyncHandler(async (req, res) => {
+  const avatarLocalPath = req.file?.path;
 
-const updateUserAvatar=asyncHandler(async(req,res)=>{
-
-  const avatarLocalPath= req.file?.path;
-
-  if(!avatarLocalPath){
-    throw new ApiError(400,"wrong avatar path");
+  if (!avatarLocalPath) {
+    throw new ApiError(400, "wrong avatar path");
   }
 
-  const avatar= await uploadOnCloudinary(avatarLocalPath);
+  const avatar = await uploadOnCloudinary(avatarLocalPath);
 
-  if(!avatar.url){
-    throw new ApiError(400,"error while avatar update");
+  if (!avatar.url) {
+    throw new ApiError(400, "error while avatar update");
   }
 
-  const user=await User.findByIdAndUpdate(
+  const user = await User.findByIdAndUpdate(
     req.user?._id,
     {
-      $set:{
-        avatar:avatar.url
-      }
+      $set: {
+        avatar: avatar.url,
+      },
     },
     {
-      new:true
+      new: true,
     }
   ).select("--password");
 
-  return res.status(200).json(200,user,'avatar updated successfully');
+  return res
+    .status(200)
+    .json(new ApiResponse(200, user, "avatar updated successfully"));
 });
-const updateUserCoverImage=asyncHandler(async(req,res)=>{
 
-  const coverImageLocalPath= req.file?.path;
+const updateUserCoverImage = asyncHandler(async (req, res) => {
+  const coverImageLocalPath = req.file?.path;
 
-  if(!coverImageLocalPath){
-    throw new ApiError(400,"wrong coverImage path");
+  if (!coverImageLocalPath) {
+    throw new ApiError(400, "wrong coverImage path");
   }
 
-  const coverImage= await uploadOnCloudinary(coverImageLocalPath);
+  const coverImage = await uploadOnCloudinary(coverImageLocalPath);
 
-  if(!coverImage.url){
-    throw new ApiError(400,"error while Cover Image update");
+  if (!coverImage.url) {
+    throw new ApiError(400, "error while Cover Image update");
   }
 
-  const user=await User.findByIdAndUpdate(
+  const user = await User.findByIdAndUpdate(
     req.user?._id,
     {
-      $set:{
-        coverImage:coverImage.url
-      }
+      $set: {
+        coverImage: coverImage.url,
+      },
     },
     {
-      new:true
+      new: true,
     }
   ).select("--password");
 
-  return res.status(200).json(200,user,'Cover Image updated successfully');
+  return res
+    .status(200)
+    .json(new ApiResponse(200, user, "Cover Image updated successfully"));
 });
+
+const getUserChannelProfile=asyncHandler(async(req,res)=>{
+    const {username}=req.params;
+
+    if(!username?.trim()){
+      throw new ApiError(400,"username is missing");
+    }
+
+    const channel=await User.aggregate([
+       { 
+        $match:{
+          username:username?.toLowerCase();
+        }
+      },
+      {
+        $lookup:{
+          from:"subscription",
+          localField:"_id",
+          foreignField:"channel",
+          as:"subscribers"
+        }
+        },
+        {
+          $lookup:{
+            from:"subscription",
+            localField:"_id",
+            foreignField:"subscriber",
+            as:"subscriberTo"
+          }
+        },
+        {
+          $addFields:{
+            subscribersCount:{
+              $size:"$subscribers"
+            },
+            channelSubscribedToCount:{
+              $size:"$subscriberTo"
+            },
+            isSubscribed:{
+              $cond:{
+                if:{$in:[req.user?._id,"$subscribers.subscriber"]}
+                ,then:true,
+                else:false
+              }
+            }
+          }
+
+        },
+        {
+          $project:{
+            fullName:1,
+            email:1,
+            userName:1,
+            subscribersCount:1,
+            channelSubscribedToCount:1,
+            isSubscribed:1,
+            avatar:1,
+            coverImage:1,
+          }
+        }
+
+      ])
+
+      if(!channel?.length){
+        throw new ApiError(400,"channel does not exists");
+      }
+
+      return res
+      .status(200)
+      .json(new ApiResponse(200,channel[0],"User channel fetched successfully"));
+})
 
 
 
@@ -350,5 +426,6 @@ export {
   ChangePassword,
   updateDetails,
   updateUserAvatar,
-  updateUserCoverImage
+  updateUserCoverImage,
+  getUserChannelProfile
 };
