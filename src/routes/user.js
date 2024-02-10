@@ -44,7 +44,7 @@ router
 
 router
   .route("/update-coverImage")
-  .patch(verifyJwt, upload.single("/coverImage"), updateUserCoverImage);
+  .patch(verifyJwt, upload.single("coverImage"), updateUserCoverImage);
 
 router.route("/update-Account").patch(verifyJwt, updateDetails);
 
