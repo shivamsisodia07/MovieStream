@@ -3,22 +3,21 @@ import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { User } from "../models/user.model.js";
 import { uploadOnCloudinary } from "../utils/cloudnary.js";
-import { verifyJwt } from "../middlewares/auth.js";
-import { application } from "express";
-import mongoose, { mongo } from "mongoose";
+import Jwt from "jsonwebtoken";
+import mongoose from "mongoose";
 
 const generateAccessAndRefreshToken = async (user_id) => {
   try {
     const user = await User.findById(user_id);
-
     const accessToken = user.generateAccessToken();
     const refreshToken = user.generateRefreshToken();
 
     user.refreshToken = refreshToken;
-    // console.log(user);
-    return { accessToken, refreshToken };
+    await user.save({validateBeforeSave:false})
+    // console.log({accessToken,refreshToken});
+    return { accessToken, refreshToken }
   } catch (error) {
-    throw new ApiError("Something went wrong while generating tokens");
+    throw new ApiError(500,"Something went wrong while generating tokens");
   }
 };
 
@@ -107,7 +106,7 @@ const LoginUser = asyncHandler(async (req, res) => {
 
     */
   const { email, userName, password } = req.body;
-  console.log(req.body);
+  // console.log(req.body);
   if (!userName || !email) {
     throw new ApiError(400, "username or email is required!!");
   }
@@ -159,8 +158,8 @@ const LogOutUser = asyncHandler(async (req, res) => {
   await User.findByIdAndUpdate(
     req.user._id,
     {
-      $set: {
-        refreshToken: undefined,
+      $unset: {
+        refreshToken: 1,
       },
     },
     {
@@ -180,27 +179,27 @@ const LogOutUser = asyncHandler(async (req, res) => {
 });
 
 const refreshAccessToken = asyncHandler(async (req, res) => {
-  const incomingToken = req.cookie.refreshToken || req.body.refreshToken;
-
+  const incomingToken = req.cookies.refreshToken || req.body.refreshToken;
+  
   if (!incomingToken) {
     throw new ApiError(401, "unauthorized request");
   }
   try {
-    const decodedToken = JWT.verify(
+    const decodedToken = Jwt.verify(
       incomingToken,
       process.env.REFRESH_TOKEN_SECRET
     );
-
+    // console.log(decodedToken);
     if (!decodedToken) {
       throw new ApiError(401, "unauthorized request");
     }
 
-    const user = await User.findById(decodedToken?._id);
+    const user = await User.findById(decodedToken?._id).select("-password");
     if (!user) {
       throw new ApiError(401, "unauthorized refresh");
     }
-
-    if (user.refreshToken !== incomingToken) {
+    // console.log(user);
+    if (user?.refreshToken !== incomingToken) {
       throw new ApiError(401, "refresh token is expired or used");
     }
 
@@ -209,9 +208,8 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
       secure: true,
     };
 
-    const { accessToken, newRefreshToken } =
-      await generateAccessAndRefreshToken(user._id);
-
+    const { accessToken, newRefreshToken } = await generateAccessAndRefreshToken(user._id);
+    // console.log(accessToken,newRefreshToken);
     return res
       .status(200)
       .cookie("accessToken", accessToken, options)
@@ -220,7 +218,7 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
         new ApiResponse(
           200,
           {
-            newRefreshToken,
+            refreshToken:newRefreshToken,
             accessToken,
           },
           "access token is refreshed"
@@ -235,7 +233,7 @@ const ChangePassword = asyncHandler(async (req, res) => {
   const { confirmPassword, oldPassword, newPassword } = req.body;
   const user = await User.findById(req.user?._id);
 
-  if (oldPassword !== confirmPassword) {
+  if (newPassword !== confirmPassword) {
     throw new ApiError(400, "confirmPassword and New Password didn't match");
   }
 
@@ -250,7 +248,7 @@ const ChangePassword = asyncHandler(async (req, res) => {
 
   return res
     .status(200)
-    .json(new ApiResponse(200, {}, "password updated successfully"));
+    .json(new ApiResponse(200, user.password, "password updated successfully"));
 });
 
 const getCurrentUser = asyncHandler(async (req, res) => {
